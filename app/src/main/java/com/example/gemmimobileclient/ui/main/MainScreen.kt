@@ -1,7 +1,6 @@
 package com.example.gemmimobileclient.ui.main
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,11 +10,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
+import com.example.gemmimobileclient.service.GemmiGpsLocationService
+import com.example.gemmimobileclient.service.GemmiMeshNetClient
+import com.example.gemmimobileclient.service.GpsTelemetry
 
 // Studio Palette
 val DarkBg = Color(0xFF0A0D14)
@@ -23,7 +26,6 @@ val PanelBg = Color(0xFF121722)
 val PurpleAccent = Color(0xFF8B5CF6)
 val CyanAccent = Color(0xFF06B6D4)
 val EmeraldGreen = Color(0xFF10B981)
-val PinkAccent = Color(0xFFEC4899)
 val BorderColor = Color(0xFF1F293D)
 val SubtextColor = Color(0xFF9CA3AF)
 
@@ -32,7 +34,17 @@ fun MainScreen(
     onItemClick: (NavKey) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+    var gpsTelemetry by remember { mutableStateOf(GpsTelemetry()) }
+    val gpsService = remember { GemmiGpsLocationService(context) }
+    val meshClient = remember { GemmiMeshNetClient("100.64.0.50") }
+
+    LaunchedEffect(Unit) {
+        gpsService.startGpsUpdates { updated ->
+            gpsTelemetry = updated
+        }
+    }
 
     Column(
         modifier = modifier
@@ -40,12 +52,10 @@ fun MainScreen(
             .background(DarkBg)
             .padding(12.dp)
     ) {
-        // HEADER BAR
         HeaderCard()
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // TAB BAR
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = PanelBg,
@@ -73,8 +83,8 @@ fun MainScreen(
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 0 -> AmbientPerceptionTab()
-                1 -> GpsTourGuideTab()
-                2 -> NetBirdMeshTab()
+                1 -> GpsTourGuideTab(gpsTelemetry)
+                2 -> NetBirdMeshTab(gpsTelemetry, meshClient)
             }
         }
     }
@@ -133,7 +143,6 @@ fun AmbientPerceptionTab() {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        // VAD & Vision Status
         Surface(
             color = PanelBg,
             shape = RoundedCornerShape(8.dp),
@@ -169,7 +178,6 @@ fun AmbientPerceptionTab() {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Trigger Vocal Alert Test
         Button(
             onClick = {
                 alertsLog += "[Spontaneous Initiation] Hey John, I just verified the LPDDR5X RAM training latency on Rev 3 is down to 0.31s!\n"
@@ -184,7 +192,6 @@ fun AmbientPerceptionTab() {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Perception Log Box
         Surface(
             color = PanelBg,
             shape = RoundedCornerShape(8.dp),
@@ -206,7 +213,7 @@ fun AmbientPerceptionTab() {
 }
 
 @Composable
-fun GpsTourGuideTab() {
+fun GpsTourGuideTab(telemetry: GpsTelemetry) {
     var tourGuideLog by remember { mutableStateOf("🗺️ Real-Time Sub-Meter GPS Tour Guide Active\nTracking location coordinates & compass bearing...\n") }
 
     Column(
@@ -221,14 +228,14 @@ fun GpsTourGuideTab() {
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text("🗺️ Sub-Meter GPS AI Walking Tour Guide", color = CyanAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("🗺️ Live Sub-Meter GPS AI Walking Tour Guide", color = CyanAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(10.dp))
 
-                StatusRow("Current GPS Location", "49.2827° N, 123.1207° W", Color.White)
+                StatusRow("Live GPS Coordinates", "${String.format("%.4f", telemetry.latitude)}° N, ${String.format("%.4f", telemetry.longitude)}° W", Color.White)
                 Spacer(modifier = Modifier.height(6.dp))
-                StatusRow("Compass Bearing & Speed", "315° NW (1.2 m/s Walking)", CyanAccent)
+                StatusRow("Compass Bearing & Speed", "${telemetry.bearing.toInt()}° NW (${String.format("%.1f", telemetry.speed)} m/s)", CyanAccent)
                 Spacer(modifier = Modifier.height(6.dp))
-                StatusRow("Nearest Landmark", "Stanley Park Historic Seawall", EmeraldGreen)
+                StatusRow("Nearest Landmark", telemetry.landmarkName, EmeraldGreen)
             }
         }
 
@@ -236,13 +243,13 @@ fun GpsTourGuideTab() {
 
         Button(
             onClick = {
-                tourGuideLog += "[Tour Guide Audio]: 'You are now walking along the granite seawall built in 1888. To your right is the Vancouver harbor skyline.'\n"
+                tourGuideLog += "[Tour Guide Audio]: 'You are now passing ${telemetry.landmarkName} at ${String.format("%.4f", telemetry.latitude)}, ${String.format("%.4f", telemetry.longitude)}. Historic waterfront view.'\n"
             },
             colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
             shape = RoundedCornerShape(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("🔊 Trigger AI Audio Tour Guide", fontWeight = FontWeight.Bold, color = Color.White)
+            Text("🔊 Trigger Live AI Tour Audio", fontWeight = FontWeight.Bold, color = Color.White)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -268,8 +275,8 @@ fun GpsTourGuideTab() {
 }
 
 @Composable
-fun NetBirdMeshTab() {
-    var meshLog by remember { mutableStateOf("NetBird P2P Mesh Connected: mesh.barrer.net\nTarget Nodes: DeepMind-Lab-Stack, Home-Server-16TB-NAS, DeepHorizon-Node-01\n") }
+fun NetBirdMeshTab(telemetry: GpsTelemetry, meshClient: GemmiMeshNetClient) {
+    var meshLog by remember { mutableStateOf("NetBird P2P Mesh Connected: mesh.barrer.net\nTarget Node: DeepHorizon-Node-01 (100.64.0.50:18799)\n") }
 
     Column(
         modifier = Modifier
@@ -296,13 +303,15 @@ fun NetBirdMeshTab() {
 
         Button(
             onClick = {
-                meshLog += "[P2P State Hydration] Hydrated 1.2 MB of mobile GPS & VAD state to DeepHorizon-Node-01 in 18.5ms!\n"
+                meshClient.hydrateMeshState(telemetry) { success, msg ->
+                    meshLog += "[${if (success) "SUCCESS" else "P2P MESH TRACE"}]: $msg\n"
+                }
             },
             colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
             shape = RoundedCornerShape(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("🌐 Hydrate Mobile State to Desktop Node", fontWeight = FontWeight.Bold, color = Color.White)
+            Text("🌐 Hydrate Mobile State to Desktop Node via OkHttp", fontWeight = FontWeight.Bold, color = Color.White)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -314,7 +323,7 @@ fun NetBirdMeshTab() {
             modifier = Modifier.fillMaxWidth().height(220.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("🌐 Mesh Hydration & Node Telemetry", color = EmeraldGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("🌐 Mesh Hydration & REST API Telemetry", color = EmeraldGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = meshLog,
