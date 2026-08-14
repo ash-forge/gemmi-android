@@ -1,7 +1,16 @@
 package com.example.gemmimobileclient.ui.main
 
+import android.annotation.SuppressLint
+import android.view.ViewGroup
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -15,14 +24,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation3.runtime.NavKey
-import com.example.gemmimobileclient.service.GemmiGpsLocationService
-import com.example.gemmimobileclient.service.GemmiMeshNetClient
-import com.example.gemmimobileclient.service.GpsTelemetry
+import com.example.gemmimobileclient.service.*
+import java.text.SimpleDateFormat
+import java.util.*
 
 // Studio Palette
 val DarkBg = Color(0xFF0A0D14)
 val PanelBg = Color(0xFF121722)
+val CardBg = Color(0xFF181F2E)
 val PurpleAccent = Color(0xFF8B5CF6)
 val CyanAccent = Color(0xFF06B6D4)
 val EmeraldGreen = Color(0xFF10B981)
@@ -36,78 +47,110 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+    var hostIp by remember { mutableStateOf("100.95.198.162") }
     var gpsTelemetry by remember { mutableStateOf(GpsTelemetry()) }
+
     val gpsService = remember { GemmiGpsLocationService(context) }
-    val meshClient = remember { GemmiMeshNetClient("100.64.0.50") }
+    val meshClient = remember { GemmiMeshNetClient(hostIp) }
+    val llamaClient = remember { GemmiLlamaClient(hostIp) }
+    val wsClient = remember { GemmiWebSocketClient(hostIp) }
+
+    var latestThought by remember { mutableStateOf("Gemmi Mobile ready. Connected to sovereign ecosystem.") }
+    var activePosture by remember { mutableStateOf("CozyChairListeningMusic") }
+
+    LaunchedEffect(hostIp) {
+        meshClient.updateHost(hostIp)
+        llamaClient.updateHost(hostIp)
+    }
 
     LaunchedEffect(Unit) {
         gpsService.startGpsUpdates { updated ->
             gpsTelemetry = updated
         }
+        wsClient.connect(
+            onConnected = {},
+            onThoughtReceived = { thought -> latestThought = thought },
+            onPostureChanged = { posture -> activePosture = posture },
+            onStatusMessage = {}
+        )
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBg)
-            .padding(12.dp)
+            .padding(10.dp)
     ) {
-        HeaderCard()
+        HeaderCard(latestThought, activePosture)
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        TabRow(
+        ScrollableTabRow(
             selectedTabIndex = selectedTab,
             containerColor = PanelBg,
-            contentColor = Color.White
+            contentColor = Color.White,
+            edgePadding = 0.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text("🎙️ Perception", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                text = { Text("💬 Neural Chat", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text("🗺️ GPS Guide", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                text = { Text("🌐 4D Avatar", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
             )
             Tab(
                 selected = selectedTab == 2,
                 onClick = { selectedTab = 2 },
-                text = { Text("🌐 NetBird", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                text = { Text("🎙️ Perception", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            )
+            Tab(
+                selected = selectedTab == 3,
+                onClick = { selectedTab = 3 },
+                text = { Text("🗺️ GPS Guide", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            )
+            Tab(
+                selected = selectedTab == 4,
+                onClick = { selectedTab = 4 },
+                text = { Text("⚙️ Settings", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
             )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                0 -> AmbientPerceptionTab()
-                1 -> GpsTourGuideTab(gpsTelemetry)
-                2 -> NetBirdMeshTab(gpsTelemetry, meshClient)
+                0 -> NeuralChatTab(llamaClient, wsClient)
+                1 -> AvatarVisualizerTab(hostIp)
+                2 -> AmbientPerceptionTab()
+                3 -> GpsTourGuideTab(gpsTelemetry)
+                4 -> SettingsMeshTab(hostIp, onHostIpChanged = { hostIp = it }, gpsTelemetry, meshClient)
             }
         }
     }
 }
 
 @Composable
-fun HeaderCard() {
+fun HeaderCard(thought: String, posture: String) {
     Surface(
         color = PanelBg,
         shape = RoundedCornerShape(8.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "⬡ Gemmi Mobile Client",
+                    text = "⬡ Gemmi Sovereign AI",
                     color = PurpleAccent,
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Surface(
@@ -115,27 +158,250 @@ fun HeaderCard() {
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = "● Mobile Node Online",
+                        text = "● $posture",
                         color = Color.White,
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
             }
             Text(
-                text = "24/7 Asynchronous Second Brain & Real-Time GPS Tour Guide",
-                color = SubtextColor,
+                text = "💭 \"$thought\"",
+                color = CyanAccent,
                 fontSize = 11.sp,
-                modifier = Modifier.padding(top = 2.dp)
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
     }
 }
 
 @Composable
+fun NeuralChatTab(llamaClient: GemmiLlamaClient, wsClient: GemmiWebSocketClient) {
+    var promptInput by remember { mutableStateOf("") }
+    var isQuerying by remember { mutableStateOf(false) }
+    val messages = remember {
+        mutableStateListOf(
+            ChatMessage("assistant", "Hello Daniel! I am connected to your local model and spatial body. How can I assist you?", "Now")
+        )
+    }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Quick Action Chips
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+        ) {
+            QuickChip("🚶 Walk") {
+                wsClient.sendState("walk")
+            }
+            QuickChip("🪑 Cozy Chair") {
+                wsClient.sendState("sit")
+            }
+            QuickChip("👋 Wave") {
+                wsClient.sendAction("wave")
+            }
+            QuickChip("📡 Radar") {
+                promptInput = "What is the status of our 3D room radar?"
+            }
+        }
+
+        // Messages List
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(messages) { msg ->
+                ChatBubble(msg)
+            }
+            if (isQuerying) {
+                item {
+                    Text(
+                        text = "Gemmi is generating neural response on port 11436...",
+                        color = CyanAccent,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Input Box
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OutlinedTextField(
+                value = promptInput,
+                onValueChange = { promptInput = it },
+                placeholder = { Text("Ask Gemmi anything...", fontSize = 12.sp, color = SubtextColor) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = CyanAccent,
+                    unfocusedBorderColor = BorderColor,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = CardBg,
+                    unfocusedContainerColor = CardBg
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Button(
+                onClick = {
+                    if (promptInput.isNotBlank() && !isQuerying) {
+                        val text = promptInput.trim()
+                        val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                        messages.add(ChatMessage("user", text, timeStr))
+                        promptInput = ""
+                        isQuerying = true
+
+                        // Also notify WebSocket server
+                        wsClient.sendChat(text)
+
+                        llamaClient.sendPrompt(text, messages) { success, reply ->
+                            isQuerying = false
+                            val respTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            messages.add(ChatMessage("assistant", reply, respTime))
+                        }
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                shape = RoundedCornerShape(8.dp),
+                enabled = !isQuerying
+            ) {
+                Text("💬 Send", fontWeight = FontWeight.Bold, color = Color.Black)
+            }
+        }
+    }
+}
+
+@Composable
+fun QuickChip(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = CardBg,
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+fun ChatBubble(msg: ChatMessage) {
+    val isUser = msg.role == "user"
+    Column(
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Surface(
+            color = if (isUser) PurpleAccent else CardBg,
+            shape = RoundedCornerShape(8.dp),
+            border = if (isUser) null else androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                Text(
+                    text = if (isUser) "You" else "Gemmi",
+                    color = if (isUser) Color.White else CyanAccent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = msg.content,
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun AvatarVisualizerTab(hostIp: String) {
+    var reloadTrigger by remember { mutableIntStateOf(0) }
+    val visualizerUrl = "http://$hostIp:8088/"
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+        ) {
+            Text(
+                text = "● Live Three.js WebGL ($visualizerUrl)",
+                color = EmeraldGreen,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Button(
+                onClick = { reloadTrigger++ },
+                colors = ButtonDefaults.buttonColors(containerColor = CardBg),
+                shape = RoundedCornerShape(6.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("🔄 Reload", fontSize = 10.sp, color = Color.White)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+        ) {
+            key(reloadTrigger, hostIp) {
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                useWideViewPort = true
+                                loadWithOverviewMode = true
+                            }
+                            webViewClient = WebViewClient()
+                            loadUrl(visualizerUrl)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun AmbientPerceptionTab() {
-    var alertsLog by remember { mutableStateOf("System Started: Gemmi Mobile Node connected to NetBird mesh (mesh.barrer.net)\nListening for ambient audio & vision stream...\n") }
+    var alertsLog by remember { mutableStateOf("System Started: Gemmi Mobile Node connected to NetBird mesh\nListening for ambient audio & vision stream...\n") }
     var initiationScore by remember { mutableFloatStateOf(0.42f) }
 
     Column(
@@ -180,8 +446,8 @@ fun AmbientPerceptionTab() {
 
         Button(
             onClick = {
-                alertsLog += "[Spontaneous Initiation] Hey John, I just verified the LPDDR5X RAM training latency on Rev 3 is down to 0.31s!\n"
-                initiationScore = 0.92f
+                alertsLog += "[Spontaneous Initiation] Hey Daniel, I just verified the 15-point kinematic spatial matrix is running at 60 FPS!\n"
+                initiationScore = 0.94f
             },
             colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent),
             shape = RoundedCornerShape(6.dp),
@@ -275,8 +541,14 @@ fun GpsTourGuideTab(telemetry: GpsTelemetry) {
 }
 
 @Composable
-fun NetBirdMeshTab(telemetry: GpsTelemetry, meshClient: GemmiMeshNetClient) {
-    var meshLog by remember { mutableStateOf("NetBird P2P Mesh Connected: mesh.barrer.net\nTarget Node: DeepHorizon-Node-01 (100.64.0.50:18799)\n") }
+fun SettingsMeshTab(
+    hostIp: String,
+    onHostIpChanged: (String) -> Unit,
+    telemetry: GpsTelemetry,
+    meshClient: GemmiMeshNetClient
+) {
+    var ipInput by remember { mutableStateOf(hostIp) }
+    var meshLog by remember { mutableStateOf("NetBird P2P Mesh Connected\nTarget Node: $hostIp:18799\n") }
 
     Column(
         modifier = Modifier
@@ -290,12 +562,38 @@ fun NetBirdMeshTab(telemetry: GpsTelemetry, meshClient: GemmiMeshNetClient) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text("🌐 NetBird P2P Mesh Overlay (mesh.barrer.net)", color = EmeraldGreen, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("⚙️ Gemmi Node & Mesh Configuration", color = PurpleAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(10.dp))
 
-                StatusRow("Mobile Node NetBird IP", "100.64.0.88", Color.White)
-                Spacer(modifier = Modifier.height(6.dp))
-                StatusRow("Primary Desktop Host", "DeepHorizon-Node-01 (100.64.0.50)", EmeraldGreen)
+                Text("Primary Desktop Host IP (NetBird / LAN):", color = SubtextColor, fontSize = 11.sp)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = ipInput,
+                        onValueChange = { ipInput = it },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PurpleAccent,
+                            unfocusedBorderColor = BorderColor,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = CardBg,
+                            unfocusedContainerColor = CardBg
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onHostIpChanged(ipInput)
+                            meshLog += "[HOST UPDATE] Set active host to $ipInput\n"
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
             }
         }
 
