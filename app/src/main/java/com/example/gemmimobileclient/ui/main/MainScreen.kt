@@ -124,7 +124,7 @@ fun MainScreen(
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 0 -> NeuralChatTab(llamaClient, wsClient)
-                1 -> AvatarVisualizerTab(hostIp)
+                1 -> AvatarVisualizerTab(hostIp, onHostIpChanged = { hostIp = it })
                 2 -> AmbientPerceptionTab()
                 3 -> GpsTourGuideTab(gpsTelemetry)
                 4 -> SettingsMeshTab(hostIp, onHostIpChanged = { hostIp = it }, gpsTelemetry, meshClient)
@@ -341,41 +341,68 @@ fun ChatBubble(msg: ChatMessage) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun AvatarVisualizerTab(hostIp: String) {
+fun AvatarVisualizerTab(
+    hostIp: String,
+    onHostIpChanged: (String) -> Unit = {}
+) {
     var reloadTrigger by remember { mutableIntStateOf(0) }
+    var ipInput by remember { mutableStateOf(hostIp) }
+    var isLoading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     val visualizerUrl = "http://$hostIp:8088/"
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // Quick IP Config Bar
         Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
         ) {
-            Text(
-                text = "● Live Three.js WebGL ($visualizerUrl)",
-                color = EmeraldGreen,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Button(
-                onClick = { reloadTrigger++ },
-                colors = ButtonDefaults.buttonColors(containerColor = CardBg),
+            OutlinedTextField(
+                value = ipInput,
+                onValueChange = { ipInput = it },
+                label = { Text("Gemmi Host IP / Port", fontSize = 10.sp, color = SubtextColor) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = CyanAccent,
+                    unfocusedBorderColor = BorderColor,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = CardBg,
+                    unfocusedContainerColor = CardBg
+                ),
                 shape = RoundedCornerShape(6.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                singleLine = true,
+                modifier = Modifier.weight(1f).height(50.dp)
+            )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Button(
+                onClick = {
+                    onHostIpChanged(ipInput.trim())
+                    loadError = null
+                    isLoading = true
+                    reloadTrigger++
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.height(50.dp)
             ) {
-                Text("🔄 Reload", fontSize = 10.sp, color = Color.White)
+                Text("🔄 Connect", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 11.sp)
             }
         }
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                .background(DarkBg)
         ) {
             key(reloadTrigger, hostIp) {
                 AndroidView(
                     factory = { ctx ->
                         WebView(ctx).apply {
+                            setBackgroundColor(0xFF0A0D14.toInt())
                             layoutParams = ViewGroup.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -384,16 +411,108 @@ fun AvatarVisualizerTab(hostIp: String) {
                                 javaScriptEnabled = true
                                 domStorageEnabled = true
                                 databaseEnabled = true
+                                allowFileAccess = true
+                                allowContentAccess = true
                                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                 useWideViewPort = true
                                 loadWithOverviewMode = true
+                                cacheMode = WebSettings.LOAD_NO_CACHE
                             }
-                            webViewClient = WebViewClient()
+                            webChromeClient = android.webkit.WebChromeClient()
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
+                                    isLoading = true
+                                    loadError = null
+                                }
+
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    super.onPageFinished(view, url)
+                                    isLoading = false
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    errorCode: Int,
+                                    description: String?,
+                                    failingUrl: String?
+                                ) {
+                                    super.onReceivedError(view, errorCode, description, failingUrl)
+                                    isLoading = false
+                                    loadError = "Connection failed to $failingUrl: $description"
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    request: android.webkit.WebResourceRequest?,
+                                    error: android.webkit.WebResourceError?
+                                ) {
+                                    super.onReceivedError(view, request, error)
+                                    if (request?.isForMainFrame == true) {
+                                        isLoading = false
+                                        loadError = "Cannot connect to $visualizerUrl. Ensure Gemmi Live Host is running on your PC."
+                                    }
+                                }
+                            }
                             loadUrl(visualizerUrl)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+
+            if (isLoading && loadError == null) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize().background(DarkBg.copy(alpha = 0.7f))
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = CyanAccent)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Loading 3D Avatar WebGL stream ($visualizerUrl)...", color = CyanAccent, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+
+            if (loadError != null) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize().background(DarkBg).padding(16.dp)
+                ) {
+                    Surface(
+                        color = CardBg,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text("⚠️ Host Connection Offline", color = Color(0xFFEF4444), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(loadError ?: "", color = SubtextColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "1. Ensure 'GemmiLiveSystemHost' is running on your PC.\n2. Verify the Host IP above matches your PC's IP.\n3. Make sure tablet is connected to the same Wi-Fi / NetBird mesh.",
+                                color = Color.White,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    loadError = null
+                                    isLoading = true
+                                    reloadTrigger++
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("Retry Connection", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
